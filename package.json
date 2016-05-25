@@ -1,0 +1,21 @@
+{
+  "config": {
+    "baseTheme": "core8",
+    "baseThemeRepo": "mozu/core-theme",
+    "baseThemeVersion": "^9.0.0"
+  },
+  "name": "Integration-brontowidgets",
+  "version": "0.1.0",
+  "description": "",
+  "devDependencies": {
+    "grunt": "^1.0.1",
+    "grunt-contrib-compress": "^1.2.0",
+    "grunt-contrib-jshint": "^1.0.0",
+    "grunt-contrib-watch": "^1.0.0",
+    "grunt-jsonlint": "^1.0.7",
+    "grunt-mozu-appdev-sync": "^2.3.0",
+    "load-grunt-tasks": "^3.5.0",
+    "thmaa": "^0.10.5",
+    "time-grunt": "^1.3.0"
+  }
+}

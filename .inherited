@@ -1,0 +1,7 @@
+.gitattributes
+build.js
+core-thumb.png
+Mozu.CoreTheme.nuspec
+README.md
+RELEASE_NOTES.md
+theme-ui.json

@@ -1,0 +1,28 @@
+{
+  "about": {
+    "name": "Integration brontowidgets",
+    "extends": "core8",
+    "isDesktop": true,
+    "isMobile": true,
+    "isTablet": true
+  },
+  "widgets": [
+    {
+        "displayName": "Bronto Conversion Tracking",
+        "displayTemplate": "bronto/bronto",
+        "icon": "/resources/admin/widgets/bronto_logo_thin.png",
+        "id": "socialcontent-widget",
+         "editViewFields": [
+              {
+                "anchor": "100%",
+                "fieldLabel": "Tag Manager Script",
+                "name": "tagManagerScript",
+                "xtype": "textareafield"
+              }
+            ],
+        "validPageTypes": [
+            "*"
+        ]
+    }
+  ]
+}
