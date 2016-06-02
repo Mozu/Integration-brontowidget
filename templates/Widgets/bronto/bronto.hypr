@@ -41,7 +41,9 @@
 {% endcomment %}
 
 
-<div data-bronto-loadjs="{{Model.config.tagManagerScript}}">BrontoScript</div>
+<div data-bronto-loadjs="{{Model.config.tagManagerScript}}">
+  {%if pageContext.isEditMode %}Bronto Conversion Tracking Script {% endif %}
+</div>
 {% require_script "widgets/bronto/bronto" %}
 
 
