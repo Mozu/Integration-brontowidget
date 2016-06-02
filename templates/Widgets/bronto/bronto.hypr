@@ -1,5 +1,4 @@
-
-<script>
+{% comment %}  
   var brontoCart ={
    "cartPhase": "ORDER_COMPLETE",
    "currency": "USD",
@@ -39,9 +38,10 @@
      }
   ]
 }
+{% endcomment %}
 
-</script>
 
-{{Model.config.tagManagerScript|safe}}
+<div data-bronto-loadjs="{{Model.config.tagManagerScript}}">BrontoScript</div>
+{% require_script "widgets/bronto/bronto" %}
 
 
