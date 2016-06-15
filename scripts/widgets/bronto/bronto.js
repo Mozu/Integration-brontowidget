@@ -31,7 +31,10 @@ function (HyprLiveContext, _, $, Backbone, api) {
         self.getOrderOrCart().then(function(order){
           //set global variable, this must match variable set
           //as 'shadowdiv' in Bronto Admin
-          window.brontoCart = self._mapToBrontoCart(order, user);
+          var brCart = self._mapToBrontoCart(order, user);
+          if(!brCart.lineItems.length)
+            return;
+          window.brontoCart = brCart;
           
           //load bronto's script
           self._getBrontoScript();
@@ -86,6 +89,7 @@ function (HyprLiveContext, _, $, Backbone, api) {
       return currentPhase;
     },
     updateCartPhase: function(cartPhase){
+      console.log(cartPhase + ' updated');
       window.brontoCart.cartPhase = cartPhase;
     },
     getOrderOrCart: function(){
@@ -135,7 +139,7 @@ function (HyprLiveContext, _, $, Backbone, api) {
       } else if(pageType == "confirmation"){
         cartPhase = this.phases.ORDER_COMPLETE;
       }
-
+      console.log('get cart phase ' + cartPhase);
       return cartPhase;
     },
     _mapToBrontoCart: function(order, user){
@@ -175,8 +179,8 @@ function (HyprLiveContext, _, $, Backbone, api) {
               "salePrice": lineItemProduct.price.salePrice,
               "quantity": lineItem.quantity,
               "totalPrice": lineItem.total,
-              "imageUrl": lineItem,
-              "productUrl": window.location.origin + lineItemProduct.url
+              "imageUrl": lineItemProduct.imageUrl,
+              "productUrl": window.location.origin + (lineItemProduct.url ? lineItemProduct.url : '/p/' + lineItemProduct.productCode)
             });
           });
         }
