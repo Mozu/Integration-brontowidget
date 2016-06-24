@@ -103,7 +103,7 @@ function (HyprLiveContext, _, $, Backbone, api) {
       } else if(pageType == "checkout"){
         order = require.mozuData('checkout');
       } else if(pageType == "confirmation"){
-        order = require.mozuData('confirmation');
+        order = require.mozuData('order');
       }
 
       if(!order)
