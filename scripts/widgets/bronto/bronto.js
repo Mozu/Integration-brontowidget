@@ -1,17 +1,19 @@
 require([
   'hyprlivecontext',
-  'underscore', 
+  'underscore',
   'modules/jquery-mozu',
   'modules/backbone-mozu',
-  'modules/api'
-], 
-function (HyprLiveContext, _, $, Backbone, api) {
+  'modules/api',
+  'modules/models-cart'
+],
+function (HyprLiveContext, _, $, Backbone, api,CartModels) {
 
 //shippingAddress = "SHIPPING_INFO"
 //shippingInfo = "SHIPPING_METHOD"
 //paymentInfo = "PAYMENT"
 
  var brontoCartWidget = {
+    isCart : false,
     phases: {
       SHOPPING : "SHOPPING",
       SHIPPING_ADDRESS : "SHIPPING_INFO",
@@ -23,7 +25,7 @@ function (HyprLiveContext, _, $, Backbone, api) {
     init: function(pageContext){
       var user = require.mozuData('user');
       var self = this;
-      
+
       if(pageContext)
         this.pageContext = pageContext;
 
@@ -31,14 +33,14 @@ function (HyprLiveContext, _, $, Backbone, api) {
         self.getOrderOrCart().then(function(order){
           //set global variable, this must match variable set
           //as 'shadowdiv' in Bronto Admin
-          var brCart = self._mapToBrontoCart(order, user);
-          if(!brCart.lineItems.length)
-            return;
+         self._mapToBrontoCart(order, user).then(function(brCart){
+          //if(!brCart.lineItems.length)
+           // return;
           window.brontoCart = brCart;
-          
+
           //load bronto's script
           self._getBrontoScript();
-          
+
           //if checkout set listeners to backbone order object
           if(self._getPageContext().pageType == "checkout"){
             if(window.order && window.order instanceof Backbone.Model){
@@ -54,12 +56,24 @@ function (HyprLiveContext, _, $, Backbone, api) {
          }, function(e){
             console.log('Bronto cart widget error getting cart.', e);
          });
+        });
       }
       //if checkout page, settimeout for checkout.js to finish
       if(this._getPageContext().pageType == "checkout")
         setTimeout(build, 2000);
       else
         build();
+
+      if (self.isCart) {
+        setTimeout(function() {
+          var cartModel = window.cartView.cartView.model;
+
+          cartModel.on('sync', function() {
+            console.log("cartChanged");
+              build();
+          });
+        }, 2000);
+      }
     },
     getCheckoutCartPhase:function(){
       var currentPhase, stepKeys = _.keys(window.checkoutViews.steps);
@@ -95,11 +109,12 @@ function (HyprLiveContext, _, $, Backbone, api) {
     getOrderOrCart: function(){
       var deferred = $.Deferred();
       var pageType = this._getPageContext().pageType;
-      
+
       var order;
-      
+
       if(pageType == "cart"){
-        order = require.mozuData('cart');
+        this.isCart = true;
+        //order = require.mozuData('cart');
       } else if(pageType == "checkout"){
         order = require.mozuData('checkout');
       } else if(pageType == "confirmation"){
@@ -133,7 +148,7 @@ function (HyprLiveContext, _, $, Backbone, api) {
     _getCartPhase: function(){
       var cartPhase = "SHOPPING";
       var pageType = this._getPageContext().pageType;
-      
+
       if(pageType == "checkout"){
         cartPhase = this.getCheckoutCartPhase();
       } else if(pageType == "confirmation"){
@@ -142,7 +157,61 @@ function (HyprLiveContext, _, $, Backbone, api) {
       console.log('get cart phase ' + cartPhase);
       return cartPhase;
     },
+    _getCategories: function(ids) {
+      var deferred = $.Deferred();
+
+
+      var filter = "";
+      _.each(ids, function(id) {
+        if (filter)
+          filter += " or ";
+        filter += "categoryId eq "+id;
+      });
+      api.get("categories",filter).then(function(categoryResponse){
+        deferred.resolve(categoryResponse.data);
+      }, function(e){
+        deferred.reject(e);
+      });
+      return deferred.promise();
+    },
+    _getParentCategories: function(parent, ids) {
+      var self = this;
+      if (!_.contains(ids, parent.id)) {
+          ids.push(parent.id);
+      }
+
+      if (parent.parent) {
+           ids = self._getParentCategories(parent.parent, ids);
+      }
+       return ids;
+    },
+    _getCategoryIds: function(categories, ids) {
+      var self = this;
+      _.each(categories, function(category) {
+        if (!_.find(ids, function(id) { return category.id == id;})) {
+          ids.push(category.id);
+          if (category.parent)
+            ids = self._getParentCategories(category.parent, ids);
+        }
+      });
+      return ids;
+    },
+    _getCategoryMap: function(categories, productCategory, str) {
+      var self = this;
+      var category = _.find(categories, function(category) {
+        return category.categoryId === productCategory.id;
+      });
+
+      if (category)
+        str = category.content.name + (str ? " > "+str : str);
+
+      if (productCategory.parent)
+        str = self._getCategoryMap(categories, productCategory.parent, str);
+
+      return str;
+    },
     _mapToBrontoCart: function(order, user){
+      var self = this;
         if(order instanceof Backbone.Model)
             order = order.toJSON();
 
@@ -160,38 +229,64 @@ function (HyprLiveContext, _, $, Backbone, api) {
           "cartUrl": this._getPageContext().secureHost + "/cart",
           "lineItems": []
         };
+
+        if (order.orderNumber)
+          brCart.orderId = order.orderNumber;
+
         if(user && user.email && user.email.length)
           brCart.emailAddress = user.email;
 
+        if (order && order.emailAddress && order.emailAddress.length)
+          brCart.emailAddress = order.emailAddress;
+
+         var deferred = $.Deferred();
         if(order.items && order.items.length){
+          var categories = _.map(_.map(order.items, function(item) { return item.product.categories; }), function(categories) { return _.last(categories); });
+
+          var ids = [];
+          ids = self._getCategoryIds(categories, ids);
+
+
+         self._getCategories(ids).then(function(categories){
           _.forEach(order.items, function(lineItem){
-            var lineItemProduct = lineItem.product;
-            //need to decide how to present this
-            var category = _.last(lineItemProduct.categories) ? _.last(lineItemProduct.categories).id : "";
-            brCart.lineItems.push(
-            {
-              "sku": lineItemProduct.productCode,
-              "name": lineItemProduct.name,
-              "description": lineItemProduct.description,
-              "category": category,
-              //"other": "",
-              "unitPrice": lineItemProduct.price.price,
-              "salePrice": lineItemProduct.price.salePrice,
-              "quantity": lineItem.quantity,
-              "totalPrice": lineItem.total,
-              "imageUrl": lineItemProduct.imageUrl,
-              "productUrl": window.location.origin + (lineItemProduct.url ? lineItemProduct.url : '/p/' + lineItemProduct.productCode)
+              var lineItemProduct = lineItem.product;
+              var item = {
+                "sku": lineItemProduct.productCode,
+                "name": lineItemProduct.name,
+                "unitPrice": lineItemProduct.price.price,
+                "quantity": lineItem.quantity,
+                "totalPrice": lineItem.total,
+                "productUrl": window.location.origin + (lineItemProduct.url ? lineItemProduct.url : '/p/' + lineItemProduct.productCode)
+              };
+
+              if (lineItemProduct.imageUrl)
+                item.imageUrl = lineItemProduct.imageUrl;
+
+              if (lineItemProduct.description)
+                item.description = lineItemProduct.description;
+
+              if (categories)
+                item.category = self._getCategoryMap(categories.items, _.last(lineItemProduct.categories),"");
+
+              if (lineItemProduct.price.salePrice)
+                item.salePrice = lineItemProduct.price.salePrice;
+
+              brCart.lineItems.push(item);
             });
+            deferred.resolve(brCart);
           });
-        }
-        return brCart;
+        } else
+          deferred.resolve(brCart);
+
+         return deferred.promise();
+       // return brCart;
     }
  };
 
 
    $(document).ready(function() {
       var pageContext = require.mozuData('pagecontext');
-      
+
        brontoCartWidget.init(pageContext);
     });
 
