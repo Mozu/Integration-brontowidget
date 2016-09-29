@@ -112,10 +112,7 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
 
       var order;
 
-      if(pageType == "cart"){
-        this.isCart = true;
-        //order = require.mozuData('cart');
-      } else if(pageType == "checkout"){
+      if(pageType == "checkout"){
         order = require.mozuData('checkout');
       } else if(pageType == "confirmation"){
         order = require.mozuData('order');
@@ -123,6 +120,8 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
 
       if(!order)
         api.get('cart').then(function(cartResponse){
+            this.isCart = true;
+            cartResponse.data.originalCartId = cartResponse.data.id;
           deferred.resolve(cartResponse.data);
         }, function(e){
           deferred.reject(e);
@@ -188,7 +187,8 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
     _getCategoryIds: function(categories, ids) {
       var self = this;
       _.each(categories, function(category) {
-        if (!_.find(ids, function(id) { return category.id == id;})) {
+
+        if (category && !_.find(ids, function(id) { return category.id == id;})) {
           ids.push(category.id);
           if (category.parent)
             ids = self._getParentCategories(category.parent, ids);
@@ -198,6 +198,7 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
     },
     _getCategoryMap: function(categories, productCategory, str) {
       var self = this;
+      if (!productCategory) return;
       var category = _.find(categories, function(category) {
         return category.categoryId === productCategory.id;
       });
@@ -226,9 +227,12 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
           "grandTotal": order.total,
           "orderId": order.id,
           //"emailAddress": "example@example.com",  //omit line if value not available
-          "cartUrl": this._getPageContext().secureHost + "/cart",
+
           "lineItems": []
         };
+
+        if (order && (order.id || order.originalCartId))
+            brCart.cartUrl =  this._getPageContext().secureHost + "/cart/recover/"+(this.isCart ? order.id : order.originalCartId);
 
         if (order.orderNumber)
           brCart.orderId = order.orderNumber;
@@ -244,7 +248,8 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
           var categories = _.map(_.map(order.items, function(item) { return item.product.categories; }), function(categories) { return _.last(categories); });
 
           var ids = [];
-          ids = self._getCategoryIds(categories, ids);
+          if (categories)
+              ids = self._getCategoryIds(categories, ids);
 
 
          self._getCategories(ids).then(function(categories){
@@ -291,3 +296,4 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
     });
 
 });
+
