@@ -1,0 +1,49 @@
+{% comment %}  
+  var brontoCart ={
+   "cartPhase": "ORDER_COMPLETE",
+   "currency": "USD",
+   "subtotal": 35.98,
+   "discountAmount": 0,
+   "taxAmount": 0,
+   "grandTotal": 35.98,
+   "orderId": "123ABC",
+   "emailAddress": "example@example.com",  //omit line if value not available
+   "cartUrl": "http://brontogear.com/",
+   "lineItems": [
+     {
+       "sku": "576879",
+   "name": "Shirt",
+   "description": "A super great description of the product",
+ "category": "Shirts > T-Shirts > Blue",
+ "other": "This can be any string value you like",
+        "unitPrice": 11.99,
+ "salePrice": 11.99,
+ "quantity": 2,
+ "totalPrice": 23.98,
+ "imageUrl": "http://brontogear.com/a/p/shirt.jpeg",
+       "productUrl": "http://brontogear.com/index.php/shirt.html"
+     },
+    {
+  "sku": "1112296",
+  "name": "Fleece Jacket",
+  "description": "A well appointed Fleece jacket",
+  "category": "Jackets > Winter > Fleece",
+ "other": "This can be any string value you like",
+  "unitPrice": 65.99,
+  "salePrice": 55.50,
+  "quantity": 1,
+  "totalPrice": 55.50,
+  "imageUrl": "http://brontogear.com/a/p/fleece.jpeg",
+  "productUrl": "http://brontogear.com/index.php/fleece.html"
+     }
+  ]
+}
+{% endcomment %}
+
+
+<div data-bronto-loadjs="{{Model.config.tagManagerScript}}">
+  {%if pageContext.isEditMode %}Bronto Conversion Tracking Script {% endif %}
+</div>
+{% require_script "widgets/bronto/bronto" %}
+
+

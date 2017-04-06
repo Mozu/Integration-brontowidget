@@ -4047,6 +4047,9 @@ define('modules/models-messages',["backbone", 'hyprlive'], function(Backbone, Hy
     unexpectedErrorText = Hypr.getLabel('unexpectedError');
 
     var Message = Backbone.Model.extend({
+        defaults:{
+            autoFade : false
+        },
         toJSON: function() {
             var j = Backbone.Model.prototype.toJSON.apply(this);
             if ((!isDebugMode && j.errorCode === "UNEXPECTED_ERROR") || !j.message) j.message = unexpectedErrorText;
@@ -4250,7 +4253,7 @@ define('modules/backbone-mozu-model',[
              * @example
              * // sets the value of Customer.EditingContact.FirstName
              * customerModel.set('editingContact.firstName');
-             * @param {string} propName The name, or dot-separated path, of the property to return.
+             * @param {string} key The name, or dot-separated path, of the property to return.
              * @returns {Object} Returns the value of the named attribute, and `undefined` if it was never set.
              */
             set: function(key, val, options) {
@@ -4258,8 +4261,11 @@ define('modules/backbone-mozu-model',[
                 if (!key && key !== 0) return this;
 
                 containsPrice = new RegExp('price', 'i');
-                // remove any properties from the current configurable model 
+                
+                // Remove any properties from the current model 
                 // where there are properties no longer present in the latest api model.
+                // This is to fix an issue when sale price is only on certain configurations or volume price bands, 
+                // so that the sale price does not persist.
                 syncRemovedKeys = function (currentModel, attrKey) {
                     _.each(_.difference(_.keys(currentModel[attrKey].toJSON()), _.keys(attrs[attrKey])), function (keyName) {
                         changes.push(keyName);
@@ -4324,7 +4330,7 @@ define('modules/backbone-mozu-model',[
                         current[attr] = val;
                     }
 
-                    if (current.productUsage === 'Configurable' && current[attr] instanceof Backbone.Model) {
+                    if (current[attr] instanceof Backbone.Model && containsPrice.test(attr)) {
                         syncRemovedKeys(current, attr);
                     }
                 }
@@ -4829,6 +4835,7 @@ define('modules/views-messages',['modules/jquery-mozu','underscore','backbone','
                 this.model.on('reset', this.render, this);
             },
             render: function() {
+                var self = this;
                 Backbone.MozuView.prototype.render.apply(this, arguments);
                 if (this.model.length > 0) {
                     this.$el.ScrollTo({
@@ -4838,6 +4845,15 @@ define('modules/views-messages',['modules/jquery-mozu','underscore','backbone','
                         axis: 'y'
                     });
                 }
+
+                if(this.model.findWhere({'autoFade': true})){
+                    self.$el.show(function() {
+                        setTimeout(function(){
+                            self.$el.fadeOut(3000);
+                        }, 4000);
+                    });
+                }
+                
             }
         });
         return new MozuMessagesView(opts);
@@ -5933,7 +5949,8 @@ return jQuery;
 /**
  * Adds a login popover to all login links on a page.
  */
-define('modules/login-links',['shim!vendor/bootstrap/js/popover[shim!vendor/bootstrap/js/tooltip[modules/jquery-mozu=jQuery]>jQuery=jQuery]>jQuery', 'modules/api', 'hyprlive', 'underscore', 'vendor/jquery-placeholder/jquery.placeholder'], function ($, api, Hypr, _) {
+define('modules/login-links',['shim!vendor/bootstrap/js/popover[shim!vendor/bootstrap/js/tooltip[modules/jquery-mozu=jQuery]>jQuery=jQuery]>jQuery', 'modules/api', 'hyprlive', 'underscore', 'hyprlivecontext', 'vendor/jquery-placeholder/jquery.placeholder'],
+     function ($, api, Hypr, _, HyprLiveContext) {
 
     var usePopovers = function() {
         return !Modernizr.mq('(max-width: 480px)');
@@ -5943,6 +5960,13 @@ define('modules/login-links',['shim!vendor/bootstrap/js/popover[shim!vendor/boot
     },
     returnFalse = function () {
         return false;
+    },
+    returnUrl = function() {
+        var returnURL = $('input[name=returnUrl]').val();
+        if(!returnURL) {
+            returnURL = '/';
+        }
+        return returnURL;
     },
     $docBody,
 
@@ -6149,7 +6173,7 @@ define('modules/login-links',['shim!vendor/bootstrap/js/popover[shim!vendor/boot
                 email: email,
                 billingZipCode: billingZipCode,
                 billingPhoneNumber: billingPhoneNumber
-            }).then(function () { window.location.href = "/my-anonymous-account"; }, _.bind(this.retrieveErrorLabel, this));
+            }).then(function () { window.location.href = (HyprLiveContext.locals.siteContext.siteSubdirectory||'') +  "/my-anonymous-account"; }, _.bind(this.retrieveErrorLabel, this));
         },
         retrievePassword: function () {
             this.setLoading(true);
@@ -6222,11 +6246,12 @@ define('modules/login-links',['shim!vendor/bootstrap/js/popover[shim!vendor/boot
                     }
                 }, self.displayApiMessage);
             }
-        }
+        } 
     });
 
     $(document).ready(function() {
         $docBody = $(document.body);
+
         $('[data-mz-action="login"]').each(function() {
             var popover = new LoginPopover();
             popover.init(this);
@@ -6236,6 +6261,23 @@ define('modules/login-links',['shim!vendor/bootstrap/js/popover[shim!vendor/boot
             var popover = new SignupPopover();
             popover.init(this);
             $(this).data('mz.popover', popover);
+        });
+        $('[data-mz-action="continueAsGuest"]').on('click', function(e) {
+            e.preventDefault();
+            var returnURL = returnUrl();
+            if(returnURL .indexOf('checkout') === -1) {
+                returnURL = '';
+            }
+
+            //saveUserId=true Will logut the current user while persisting the state of the current shopping cart
+            $.ajax({
+                    method: 'GET',
+                    url: '../../logout?saveUserId=true&returnUrl=' + returnURL,
+                    complete: function(data) {
+                        location.href = require.mozuData('pagecontext').secureHost + '/' + returnURL;
+                    }
+            });
+           
         });
         $('[data-mz-action="launchforgotpassword"]').each(function() {
             var popover = new LoginPopover();
@@ -6409,7 +6451,9 @@ define('modules/models-price',["underscore", "modules/backbone-mozu"], function 
     };
 
 });
-define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/backbone-mozu", "hyprlive", "modules/models-price", "modules/api"], function($, _, Backbone, Hypr, PriceModels, api) {
+define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/backbone-mozu", "hyprlive", "modules/models-price", "modules/api",
+    "hyprlivecontext"], function($, _, Backbone, Hypr, PriceModels, api,
+        HyprLiveContext) {
 
     function zeroPad(str, len) {
         str = str.toString();
@@ -6596,7 +6640,7 @@ define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/b
         mozuType: 'product',
         idAttribute: 'productCode',
         handlesMessages: true,
-        helpers: ['mainImage', 'notDoneConfiguring', 'hasPriceRange', 'supportsInStorePickup'],
+        helpers: ['mainImage', 'notDoneConfiguring', 'hasPriceRange', 'supportsInStorePickup', 'isPurchasable','hasVolumePricing'],
         defaults: {
             purchasableState: {},
             quantity: 1
@@ -6658,6 +6702,9 @@ define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/b
         hasPriceRange: function() {
             return this._hasPriceRange;
         },
+        hasVolumePricing: function() {
+            return this._hasVolumePricing;
+        },
         calculateHasPriceRange: function(json) {
             this._hasPriceRange = json && !!json.priceRange;
         },
@@ -6665,8 +6712,20 @@ define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/b
             var slug = this.get('content').get('seoFriendlyUrl');
             _.bindAll(this, 'calculateHasPriceRange', 'onOptionChange');
             this.listenTo(this.get("options"), "optionchange", this.onOptionChange);
+            this._hasVolumePricing = false;
+            this._minQty = 1;
+            if (this.get('volumePriceBands') && this.get('volumePriceBands').length > 0) {
+                this._hasVolumePricing = true;
+                this._minQty = _.first(this.get('volumePriceBands')).minQty;
+                if (this._minQty > 1) {
+                    if (this.get('quantity') <= 1) {
+                        this.set('quantity', this._minQty);
+                    }
+                    this.validation.quantity.msg = Hypr.getLabel('enterMinProductQuantity', this._minQty);
+                }
+            }
             this.updateConfiguration = _.debounce(this.updateConfiguration, 300);
-            this.set({ url: slug ? "/" + slug + "/p/" + this.get("productCode") : "/p/" + this.get("productCode") });
+            this.set({ url: (HyprLiveContext.locals.siteContext.siteSubdirectory || '') + (slug ? "/" + slug : "") +  "/p/" + this.get("productCode")});
             this.lastConfiguration = [];
             this.calculateHasPriceRange(conf);
             this.on('sync', this.calculateHasPriceRange);
@@ -6677,6 +6736,16 @@ define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/b
         },
         notDoneConfiguring: function() {
             return this.get('productUsage') === Product.Constants.ProductUsage.Configurable && !this.get('variationProductCode');
+        },
+        isPurchasable: function() {
+            var purchaseState = this.get('purchasableState');
+            if (purchaseState.isPurchasable){
+                return true;
+            }
+            if (this._hasVolumePricing && purchaseState.messages && purchaseState.messages.length === 1 && purchaseState.messages[0].validationType === 'MinQtyNotMet') {
+                return true;
+            }
+            return false;
         },
         supportsInStorePickup: function() {
             return _.contains(this.get('fulfillmentTypesSupported'), Product.Constants.FulfillmentTypes.IN_STORE_PICKUP);
@@ -6736,11 +6805,41 @@ define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/b
             this.isLoading(true);
             this.updateConfiguration();
         },
+        updateQuantity: function (newQty) {
+            if (this.get('quantity') === newQty) return;
+            this.set('quantity', newQty);
+            if (!this._hasVolumePricing) return;
+            if (newQty < this._minQty) {
+                return this.showBelowQuantityWarning();
+            }
+            this.isLoading(true);
+            this.apiConfigure({ options: this.getConfiguredOptions() }, { useExistingInstances: true });
+        },
+        showBelowQuantityWarning: function () {
+            this.validation.quantity.min = this._minQty;
+            this.validate();
+            this.validation.quantity.min = 1;
+        },
+        handleMixedVolumePricingTransitions: function (data) {
+            if (!data || !data.volumePriceBands || data.volumePriceBands.length === 0) return;
+            if (this._minQty === data.volumePriceBands[0].minQty) return;
+            this._minQty = data.volumePriceBands[0].minQty;
+            this.validation.quantity.msg = Hypr.getLabel('enterMinProductQuantity', this._minQty);
+            if (this.get('quantity') < this._minQty) {
+                this.updateQuantity(this._minQty);
+            }
+        },
         updateConfiguration: function() {
-            var newConfiguration = this.getConfiguredOptions();
+            var me = this,
+              newConfiguration = this.getConfiguredOptions();
             if (JSON.stringify(this.lastConfiguration) !== JSON.stringify(newConfiguration)) {
                 this.lastConfiguration = newConfiguration;
-                this.apiConfigure({ options: newConfiguration }, { useExistingInstances: true });
+                this.apiConfigure({ options: newConfiguration }, { useExistingInstances: true })
+                    .then(function (apiModel) {
+                        if (me._hasVolumePricing) {
+                            me.handleMixedVolumePricingTransitions(apiModel.data);
+                        }
+                     });
             } else {
                 this.isLoading(false);
             }
@@ -6798,67 +6897,115 @@ define('modules/models-product',["modules/jquery-mozu", "underscore", "modules/b
 
 
 
-define('modules/models-orders',['underscore', "modules/backbone-mozu", "hyprlive", "modules/models-product"], function (_, Backbone, Hypr, ProductModels) {
-
-    var OrderItem = Backbone.MozuModel.extend({
-        relations: {
-            product: ProductModels.Product
+define('modules/models-returns',["modules/api", 'underscore', "modules/backbone-mozu", "hyprlive", "modules/models-product"], function (api, _, Backbone, Hypr, ProductModels) {
+ var ReturnableItems = Backbone.MozuModel.extend({
+        relations: { 
+        },
+        _returnableItems: [],
+        getReturnableItems: function(){
+            return _.filter(this._returnableItems, function(item) { 
+                var method = (item.fulfillmentMethod) ? item.fulfillmentMethod : item.parent.fulfillmentMethod;
+                return method !== "Digital"; 
+            });
+        },
+        fetchReturnableItems: function(){
+            var self = this,
+            op = self.apiGetReturnableItems();
+            self.isLoading(true);
+            return op.then(function (data) {
+                self.isLoading(false);
+                return data;
+            }, function () {
+                self.isLoading(false);
+            });
         }
     }),
-
-    OrderItemsList = Backbone.Collection.extend({
-        model: OrderItem
-    }),
-
-    RMA = Backbone.MozuModel.extend({
-        mozuType: 'rma',
+    RMAItem = Backbone.MozuModel.extend({
         relations: {
-            items: OrderItemsList
+            //item: OrderItem
         },
         dataTypes: {
             quantity: Backbone.MozuModel.DataTypes.Int
         },
-        defaults: {
-            returnType: 'Refund'
-        },
-        validation: {
-            reason: {
+
+        _validation: {
+            rmaReason: {
                 required: true,
                 msg: Hypr.getLabel('enterReturnReason')
             },
-            quantity: {
+            rmaQuantity: {
                 min: 1,
                 msg: Hypr.getLabel('enterReturnQuantity')
             },
-            comments: {
+            rmaComments: {
                 fn: function (value) {
                     if (this.attributes.reason === "Other" && !value) return Hypr.getLabel('enterOtherComments');
                 }
             }
         },
-        // in GA you can only return one item at a time, but this will have to change at some point
+        initialize: function() {
+            var set = this;
+        },
         toJSON: function () {
             var j = Backbone.MozuModel.prototype.toJSON.apply(this, arguments);
-            if (j.reason && j.quantity && j.items && j.items[0] && !j.items[0].reason) {
-                j.items[0].reasons = [
+            if(j.rmaReturnType) {
+              j.returnType = j.rmaReturnType;
+            }
+            if (j && j.rmaReason && j.rmaQuantity) {
+                    j.reasons = [
                     {
-                        reason: j.reason,
-                        quantity: j.quantity
+                        reason: j.rmaReason,
+                        quantity: j.rmaQuantity
                     }
                 ];
-                if (j.comments) j.items[0].notes = [
+                if (j.rmaComments) j.notes = [
                     {
-                        text: j.comments
+                        text: j.rmaComments
                     }
                 ];
             }
-            delete j.reason;
-            delete j.quantity;
-            delete j.comments;
+            delete j.rmaReason;
+            delete j.rmaQuantity;
+            delete j.rmaComments;
+            delete j.rmaReturnType;
             return j;
         }
     }),
-
+    RMA = Backbone.MozuModel.extend({
+        mozuType: 'rma',
+        relations: {
+            items: Backbone.Collection.extend({
+               model: RMAItem 
+            })
+        },
+        defaults: {
+            returnType: 'Refund'
+        },
+        validateActiveReturns: function(){
+            var self = this,
+            errors = [];
+            this.get('items').each(function(item, key) {
+                item.validation = item._validation;
+                if (item.get('isSelectedForReturn')){
+                    if(!item.validate()) errors.push(item.validate());
+                }
+            });
+            if(errors.length > 0) {
+              return errors;  
+            }
+            return false;
+        },
+        toJSON: function () {
+            var self = this,
+            jsonItems = [];
+            this.get('items').each(function(item){
+                jsonItems.push(item.toJSON());
+            });
+            this.set('items', jsonItems);
+            var j = Backbone.MozuModel.prototype.toJSON.apply(this, arguments);
+            return j;
+        }
+    }),
     RMACollection = Backbone.MozuPagedCollection.extend({
         mozuType: 'rmas',
         defaults: {
@@ -6868,74 +7015,619 @@ define('modules/models-orders',['underscore', "modules/backbone-mozu", "hyprlive
             items: Backbone.Collection.extend({
                 model: RMA
             })
-        }
-    }),
-
-    Order = Backbone.MozuModel.extend({
-        mozuType: 'order',
-        relations: {
-            items: OrderItemsList
-        }
-    }),
-
-    OrderCollection = Backbone.MozuPagedCollection.extend({
-        mozuType: 'orders',
-        defaults: {
-            pageSize: 5
         },
-        relations: {
-            items: Backbone.Collection.extend({
-                model: Order
-            }),
-            rma: RMA
-        },
-        startReturn: function (orderId, itemId) {
-            var rma = this.get('rma');
-            var item = this.get('items').get(orderId).get('items').get(itemId);
-            if (item) {
-                item = item.toJSON();
-                item.orderItemId = item.id;
-                rma.get('items').reset([item]);
-                rma.set({
-                    originalOrderId: orderId,
-                    returnType: 'Refund'
-                });
-            }
-        },
-        clearReturn: function() {
-            var rma = this.get('rma');
-            rma.clear();
-        },
-        finishReturn: function (id) {
-            var self = this, op;
-            if (!this.validate()) {
-                this.isLoading(true);
-                op = this.get('rma').apiCreate();
-                if (op) return op.then(function (rma) {
-                    self.isLoading(false);
-                    self.trigger('returncreated', rma.prop('id'));
-                    self.clearReturn();
-                    return rma;
-                }, function () {
-                    self.isLoading(false);
-                });
-            }
+        getReturnItemsByOrderId : function(orderId){
+            var self = this;
+            var rmaReturns = self.get('items').where(function(rma){
+                return rma.get('originalOrderId') === orderId;
+            });
+            return rmaReturns;
         }
     });
+    return {
+        ReturnableItems: ReturnableItems,
+        RMA: RMA,
+        RMACollection: RMACollection
+    };
+});
+define('modules/models-orders',["modules/api", 'underscore', "modules/backbone-mozu", "hyprlive", "modules/models-product", "modules/models-returns"], function(api, _, Backbone, Hypr, ProductModels, ReturnModels) {
+
+    var OrderItem = Backbone.MozuModel.extend({
+            relations: {
+                product: ProductModels.Product
+            },
+            helpers: ['uniqueProductCode'],
+            uniqueProductCode: function() {
+                //Takes into account product variation code
+                var self = this,
+                    productCode = self.get('productCode');
+
+                if (!productCode) {
+                    productCode = (self.get('product').get('variationProductCode')) ? self.get('product').get('variationProductCode') : self.get('product').get('productCode');
+                }
+                return productCode;
+            },
+            toJSON: function() {
+                var j = Backbone.MozuModel.prototype.toJSON.apply(this, arguments);
+                if (j.parent) {
+                    j.parent = j.parent.toJSON();
+                }
+                return j;
+            }
+        }),
+
+        OrderItemsList = Backbone.Collection.extend({
+            model: OrderItem
+        }),
+        OrderPackageItem = Backbone.MozuModel.extend({
+            helpers: ['getProductDetails'],
+            productDetails: null,
+            getProductDetails: function() {
+                /**
+                 * Little Odd, this is used to set the value for the helper function getProductDetails
+                 * Figuring out a package's product info is somewhat heavy. So in order to ensure it is only run once we do this here.
+                 */
+                if (!this.productDetails) {
+                    this.setProductDetails();
+                }
+                return this.productDetails;
+            },
+            addOrderItemToModel: function() {
+                var self = this;
+                self.set('orderItem', this.getOrderItem());
+            },
+            getOrderItem: function() {
+                var self = this;
+                if (this.collection.parent) {
+                    return this.collection.parent.getOrder().get('explodedItems').find(function(model) {
+                        if (model.get('productCode')) {
+                            return self.get('productCode') === model.get('productCode');
+                        }
+                        return self.get('productCode') === (model.get('product').get('variationProductCode') ? model.get('product').get('variationProductCode') : model.get('product').get('productCode'));
+                    });
+                }
+                return null;
+            },
+            setProductDetails: function() {
+                if (this.getOrderItem()) {
+                    this.productDetails = this.getOrderItem().toJSON();
+                } else {
+                    this.productDetails = {};
+                }
+            }
+        }),
+        OrderPackage = Backbone.MozuModel.extend({
+            relations: {
+                items: Backbone.Collection.extend({
+                    model: OrderPackageItem
+                })
+            },
+            dataTypes: {
+                orderId: Backbone.MozuModel.DataTypes.Int,
+                selectedForReturn: Backbone.MozuModel.DataTypes.Boolean
+            },
+            helpers: ['formatedFulfillmentDate'],
+            //To-Do: Double Check for useage
+            getOrder: function() {
+                return this.collection.parent;
+            },
+            formatedFulfillmentDate: function() {
+                var shippedDate = this.get('fulfillmentDate'),
+                    options = {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric"
+                    };
+
+                if (shippedDate) {
+                    var date = new Date(shippedDate);
+                    return date.toLocaleDateString("en-us", options);
+                }
+
+                return "";
+            }
+        }),
+
+        OrderPackageList = Backbone.Collection.extend({
+            model: OrderPackage
+        }),
+        OrderItemBit = Backbone.MozuModel.extend({
+            relations: {
+                product: ProductModels.Product
+            },
+            uniqueProductCode: function() {
+                //Takes into account product variation code
+                var self = this,
+                    productCode = self.get('productCode');
+
+                if (!productCode) {
+                    productCode = (self.get('product').get('variationProductCode')) ? self.get('product').get('variationProductCode') : self.get('product').get('productCode');
+                }
+                return productCode;
+            },
+            getOrderItem: function() {
+                var self = this;
+                if (self.get('Type') === "BundleItem" && self.get('parentLineId')) {
+                    var orderItem = self.collection.getOrderItems().find(function(item) {
+                        return item.get('lineId') === self.get('parentLineId');
+                    });
+                    return orderItem;
+                }
+                return this.collection.getOrderItems().find(function(item) {
+                    return item.get('lineId') === self.get('lineId');
+                });
+            }
+        }),
+        ExplodedOrderItems = Backbone.Collection.extend({
+            relations: {
+                model: OrderItemBit
+            },
+            initSet: function() {
+                this.mapOrderItems();
+            },
+            /** 
+             * Groups our Exoloded Items by productCode
+             *
+             * [getGroupedCollection]
+             * @return[array of OrderItemBit]
+             */
+            getGroupedCollection: function() {
+                var self = this,
+                    groupedBits = {
+                        "productExtra": [],
+                        "standardProduct": []
+                    };
+
+                var productExtras = self.filter(function(item) {
+                        return item.has('optionAttributeFQN');
+                    }),
+                    standardProducts = self.filter(function(item) {
+                        return !item.has('optionAttributeFQN');
+                    }),
+                    standardProductsGroup = _.groupBy(standardProducts, function(item) {
+                        return item.uniqueProductCode();
+                    }),
+                    productExtraGroup = {};
+                _.each(productExtras, function(extra, extraKey) {
+                    var key = extra.uniqueProductCode() + '_' + extra.get('optionAttributeFQN');
+                    var duplicateItem = _.find(productExtraGroup, function(groupedItem) {
+                        return (extra.uniqueProductCode() === groupedItem[0].uniqueProductCode() && extra.get('optionAttributeFQN') === groupedItem[0].get('optionAttributeFQN'));
+                    });
+                    if (duplicateItem) {
+                        productExtraGroup[key].add(extra);
+                        return false;
+                    }
+                    productExtraGroup[key] = [extra];
+                });
+
+                function combineAndAddToGroupBits(type, grouping) {
+                    _.each(grouping, function(group, key) {
+                        var groupQuantity = 0;
+                        _.each(group, function(item) {
+                            groupQuantity += item.get('quantity');
+                        });
+
+                        group[0].set('quantity', groupQuantity);
+                        groupedBits[type].push(group[0]);
+                    });
+                }
+
+                combineAndAddToGroupBits("productExtra", productExtraGroup);
+                combineAndAddToGroupBits("standardProduct", standardProductsGroup);
+
+                return groupedBits;
+            },
+            getOrderItems: function() {
+                return this.parent.get('items');
+            },
+            mapOrderItems: function() {
+                var self = this;
+                self.getOrderItems().each(function(item, key) {
+                    var productOrderItem = JSON.parse(JSON.stringify(item));
+                    self.explodeOrderItems(productOrderItem);
+                });
+            },
+            explodeOrderItems: function(item) {
+                var self = this;
+                if (item && item.product.bundledProducts) {
+                    if (item.product.bundledProducts.length > 0) {
+                        //We do not want to include the orignal bundle in our expoled Items
+                        if (item.product.productUsage !== "Bundle") {
+                            self.add(new OrderItemBit(item));
+                        }
+                        self.explodeProductBundle(item);
+                        return;
+                    }
+                }
+                self.add(new OrderItemBit(item));
+            },
+            explodeProductBundle: function(item) {
+                var self = this;
+                var bundleItems = JSON.parse(JSON.stringify(item.product.bundledProducts));
+                _.each(bundleItems, function(bundle, key) {
+                    bundle.Type = "BundleItem";
+                    bundle.parentProductCode = (item.product.variationProductCode) ? item.product.variationProductCode : item.product.productCode;
+                    bundle.parentLineId = item.lineId;
+                    bundle.parentProduct = JSON.parse(JSON.stringify(item.product));
+                    bundle.quantity = bundle.quantity * item.quantity;
+                    self.add(new OrderItemBit(bundle));
+                });
+            }
+        }),
+        ReturnableItem = Backbone.MozuModel.extend({
+            relations: {
+                product: ProductModels.Product
+            },
+            helpers: ['uniqueProductCode'],
+            initialize: function() {
+                var duplicate = this.checkForDuplicate();
+                if (duplicate)
+                    this.handleDuplicate(duplicate);
+            },
+            checkForDuplicate: function() {
+                var self = this;
+                var duplicate = self.collection.find(function(item) {
+                    if (self.uniqueProductCode() === item.uniqueProductCode()) {
+                        if (self.get('orderItemOptionAttributeFQN') === item.get('orderItemOptionAttributeFQN')) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                return duplicate;
+            },
+            handleDuplicate: function(duplicate) {
+                var self = this;
+                if (duplicate) {
+                    self.set('quantityReturnable', self.get('quantityReturnable') + duplicate.get('quantityReturnable'));
+                    self.collection.remove(duplicate);
+                }
+            },
+            uniqueProductCode: function() {
+                var self = this,
+                    productCode = self.get('productCode');
+
+                if (!productCode) {
+                    productCode = (self.get('product').get('variationProductCode')) ? self.get('product').get('variationProductCode') : self.get('product').get('productCode');
+                }
+                return productCode;
+            },
+            getOrderItem: function() {
+                var self = this;
+                var productCode = self.uniqueProductCode();
+
+                var orderItem = self.collection.parent.get('items').find(function(item) {
+                    return item.get('lineId') === self.get('orderLineId');
+                });
+                return orderItem;
+            },
+            startReturn: function() {
+                var rmas = this.collection.parent.get('rma');
+                rmas.get('items').add(this);
+                rmas.set({
+                    originalOrderId: this.collection.parent.get('id'),
+                    returnType: 'Refund'
+                });
+
+            },
+            cancelReturn: function() {
+                var rmas = this.collection.parent.get('rma');
+                var item = this.getOrderItem();
+                if (item) {
+                    item = item.toJSON();
+                    rmas.get('items').remove(item);
+                }
+            }
+        }),
+
+        ReturnableItems = Backbone.Collection.extend({
+            model: ReturnableItem
+        }),
+
+        Order = Backbone.MozuModel.extend({
+            mozuType: 'order',
+            relations: {
+                items: OrderItemsList,
+                explodedItems: ExplodedOrderItems,
+                packages: OrderPackageList,
+                pickups: OrderPackageList,
+                digitalPackages: OrderPackageList,
+                returnableItems: ReturnableItems,
+                rma: ReturnModels.RMA
+            },
+            handlesMessages: true,
+            helpers: ['getNonShippedItems', 'hasFulfilledPackages', 'hasFulfilledPickups', 'hasFulfilledDigital', 'getInStorePickups', 'getReturnableItems'],
+            _nonShippedItems: {},
+            initialize: function() {
+                var self = this;
+                var pageContext = require.mozuData('pagecontext'),
+                    orderAttributeDefinitions = pageContext.storefrontOrderAttributes;
+                self.set('orderAttributeDefinitions', orderAttributeDefinitions);
+                self.get('explodedItems').initSet();
+
+                //This is used to set the value for the helper function getNonShippedItems
+                //Figuring out what items have yet to ship is somwhat heavy. So in order to ensure it is only run once we do this here.
+                self.setNonShippedItems();
+            },
+            hasFulfilledPackages: function() {
+                var self = this,
+                    hasfulfilledPackage = false;
+
+                self.get('packages').each(function(myPackage) {
+                    if (myPackage.get('status') === "Fulfilled") {
+                        hasfulfilledPackage = true;
+                    }
+                });
+                return hasfulfilledPackage;
+            },
+            hasFulfilledPickups: function() {
+                var self = this,
+                    hasfulfilledPackage = false;
+
+                self.get('pickups').each(function(myPickup) {
+                    if (myPickup.get('status') === "Fulfilled") {
+                        hasfulfilledPackage = true;
+                    }
+                });
+                return hasfulfilledPackage;
+            },
+            hasFulfilledDigital: function() {
+                var self = this,
+                    hasfulfilledPackage = false;
+
+                self.get('digitalPackages').each(function(myDigital) {
+                    if (myDigital.get('status') === "Fulfilled") {
+                        hasfulfilledPackage = true;
+                    }
+                });
+                return hasfulfilledPackage;
+            },
+            getReturnableItems: function() {
+                var filteredReturnItems = this.get('returnableItems').filter(function(item) {
+                    var method = item.getOrderItem().get('fulfillmentMethod');
+                    return method !== "Digital";
+                });
+                return _.invoke(filteredReturnItems, 'toJSON');
+            },
+            getInStorePickups: function() {
+                var filteredItems = _.filter(this._nonShippedItems, function(item) {
+                    var method = item.getOrderItem().get('fulfillmentMethod');
+                    return method === "Pickup";
+                });
+                return _.invoke(filteredItems, 'toJSON');
+            },
+            getNonShippedItems: function() {
+                return _.invoke(this._nonShippedItems, 'toJSON');
+            },
+            /**
+             * Creates a list package codes from all package types to be used to determine shipped and nonShipped items.
+             * 
+             * [getCollectionOfPackageCodes]
+             * @return {[Array]}
+             */
+            getCollectionOfPackages: function() {
+                var self = this,
+                    packageCodes = [],
+                    groupedCodes = {
+                        "productExtra": [],
+                        "standardProduct": []
+                    };
+
+                var addPackageItems = function(packageItems) {
+                    if (packageItems.length > 0) {
+                        packageItems.each(function(thisPackage, key, list) {
+                            if (thisPackage.get("status") === "Fulfilled") {
+                                _.each(thisPackage.get('items').models, function(packageItem, key, list) {
+                                    var quan = packageItem.get('quantity');
+                                    var type = (packageItem.get('optionAttributeFQN') && packageItem.get('optionAttributeFQN') !== "") ? "productExtra" : "standardProduct";
+                                    for (var i = 0; i < quan; i++) {
+                                        groupedCodes[type].push(packageItem);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                };
+
+                addPackageItems(self.get('packages'));
+                addPackageItems(self.get('pickups'));
+                addPackageItems(self.get('digitalPackages'));
+
+                return groupedCodes;
+            },
+            /**
+             * Creates a list of nonShipped items by comparing fulfilled packages items with Order Items
+             * 
+             * [setNonShippedItems]
+             * @return {[Array]}
+             */
+            setNonShippedItems: function() {
+                var self = this,
+                    groupedItems = [];
+
+                if (self.get('items')) {
+                    //Get collections of both packaged Codes and exploded order items
+                    var packages = this.getCollectionOfPackages();
+                    groupedItems = this.get('explodedItems').getGroupedCollection();
+
+                    //Update quanity of items by comparing with packaged items
+                    _.each(packages, function(type, typeKey, typeList) {
+                        _.each(type, function(myPackage, key, list) {
+                            _.each(groupedItems[typeKey], function(item, key) {
+                                if (item.uniqueProductCode() === myPackage.get('productCode')) {
+                                    if (item.get('optionAttributeFQN') && item.get('optionAttributeFQN') != myPackage.get('optionAttributeFQN')) {
+                                        return false;
+                                    }
+                                    if (item.get('quantity') === 1) {
+                                        groupedItems[typeKey].splice(key, 1);
+                                        return false;
+                                    }
+                                    item.set('quantity', item.get('quantity') - 1);
+                                    return false;
+                                }
+                            });
+                        });
+                    });
+
+                }
+                self._nonShippedItems = groupedItems.standardProduct.concat(groupedItems.productExtra);
+                return;
+            },
+            /**
+             * Fetches a list of order items and thier returnable states
+             * 
+             * [setNonShippedItems]
+             * @return {[Array]}
+             */
+            fetchReturnableItems: function() {
+                var self = this,
+                    op = self.apiGetReturnableItems();
+                self.isLoading(true);
+                return op.then(function(data) {
+                    self.isLoading(false);
+                    return data;
+                }, function() {
+                    self.isLoading(false);
+                });
+            },
+            /**
+             * Used to create a list of returnable items from the return of apiGetReturnableItems and Order Items
+             * This is primary to get product detial information and ensure Product bundles are returned as a whole
+             * while product extras, within a bundle or not, are returned separately. 
+             * 
+             * [returnableItems]
+             * @return {[Array]}
+             */
+            returnableItems: function(returnableItems) {
+                var self = this,
+                    returnItems = [],
+                    parentBundles = [];
+
+                var lineItemGroups = _.groupBy(returnableItems, function(item) {
+                    return item.orderLineId;
+                });
+
+                self.get('returnableItems').reset(null);
+                // First, group the returnable items by OrderItem.LineId
+                _.each(lineItemGroups, function(grouping) {
+                    // If an OrderItem has extras, there will be 2 entries for the parent, one with extras, one without.
+                    // Find the one without extras (standalone parent) if available.
+                    var returnableParents = _.filter(grouping, function(item) {
+                        return !item.parentProductCode;
+                    });
+
+                    var returnableParent = returnableParents.length > 1 ?
+                        _.find(returnableParents, function(item) {
+                            return item.excludeProductExtras === true;
+                        }) :
+                        returnableParents[0];
+
+                    var originalOrderItem = self.get('items').find(function(item) {
+                        return item.get('lineId') === returnableParent.orderLineId;
+                    });
+
+                    if (returnableParent.quantityReturnable > 0) {
+                        // Clone does not deep copy, each individual node must be cloned to avoid overriding of the orignal orderitem
+                        var parentItem = JSON.parse(JSON.stringify(originalOrderItem));
+                        returnableParent.product = parentItem.product;
+
+                        // If we need to exclude extras, strip off bundle items with an OptionAttributeFQN and the corresponding Product.Options.
+                        if (returnableParent.excludeProductExtras) {
+                            var children = parentItem.product.bundledProducts;
+                            var extraOptions = _.chain(children)
+                                .filter(function(child) {
+                                    return child.optionAttributeFQN;
+                                })
+                                .map(function(extra) {
+                                    return extra.optionAttributeFQN;
+                                })
+                                .value();
+                            var bundleItems = _.filter(children, function(child) {
+                                return !child.optionAttributeFQN;
+                            });
+
+                            var allOptions = parentItem.product.options;
+                            var nonExtraOptions = allOptions.filter(function(option) {
+                                return !_.contains(extraOptions, option.attributeFQN);
+                            });
+
+                            //Add any extra properites we wish the returnableItem to have
+                            returnableParent.product.bundledProducts = bundleItems;
+                            returnableParent.product.options = nonExtraOptions;
+                        }
+
+                        self.get('returnableItems').add(returnableParent);
+
+                    }
+
+                    var childProducts = originalOrderItem.get('product').get('bundledProducts');
+                    // Now process extras.
+                    var returnableChildren = _.filter(grouping, function(item) {
+                        return item.parentProductCode && item.orderItemOptionAttributeFQN && item.quantityReturnable > 0;
+                    });
+                    _.each(returnableChildren, function(returnableChild, key) {
+                        var childProductMatch = _.find(childProducts, function(childProduct) {
+                            var productCodeMatch = childProduct.productCode === returnableChild.productCode;
+                            var optionMatch = childProduct.optionAttributeFQN === returnableChild.orderItemOptionAttributeFQN;
+                            return productCodeMatch && optionMatch;
+                        });
+
+                        if (childProductMatch) {
+                            var childProduct = _.clone(childProductMatch);
+                            returnableChild.product = childProduct;
+                            self.get('returnableItems').add(returnableChild);
+                        }
+                    });
+                });
+                return self.get('returnableItems');
+            },
+            clearReturn: function() {
+                var rmas = this.get('rma');
+                rmas.clear();
+            },
+            finishReturn: function() {
+                var self = this,
+                    op, rma, validationObj;
+                rma = this.get('rma');
+                validationObj = false;
+                if (validationObj) {
+                    Object.keys(validationObj).forEach(function(key) {
+                        this.trigger('error', {
+                            message: validationObj[key]
+                        });
+                    }, this);
+
+                    return false;
+                }
+                this.isLoading(true);
+                rma.toJSON();
+                rma.syncApiModel();
+                op = rma.apiCreate();
+                if (op) return op;
+            }
+        }),
+        OrderCollection = Backbone.MozuPagedCollection.extend({
+            mozuType: 'orders',
+            defaults: {
+                pageSize: 5
+            },
+            relations: {
+                items: Backbone.Collection.extend({
+                    model: Order
+                })
+            }
+        });
 
     return {
         OrderItem: OrderItem,
-        RMA: RMA,
-        RMACollection: RMACollection,
         Order: Order,
-        OrderCollection: OrderCollection
+        OrderCollection: OrderCollection,
+        OrderPackage: OrderPackage
     };
 
 });
-
-
-
-define('modules/models-paymentmethods',['modules/jquery-mozu', 'underscore', 'modules/backbone-mozu', 'hyprlive'], function ($, _, Backbone, Hypr) {
+define('modules/models-paymentmethods',['modules/jquery-mozu', 'underscore', 'modules/backbone-mozu', 'hyprlive', 'hyprlivecontext', 'modules/models-address'], function ($, _, Backbone, Hypr, HyprLiveContext, Address) {
     // payment methods only validate if they are selected!
     var PaymentMethod = Backbone.MozuModel.extend({
         present: function (value, attr) {
@@ -7116,14 +7808,196 @@ define('modules/models-paymentmethods',['modules/jquery-mozu', 'underscore', 'mo
         }
     });
 
+    var PurchaseOrderCustomField = Backbone.MozuModel.extend({
+        /*validation: {
+            code: {
+                // set from code, before validation call
+                fn: 'present'
+            },
+            label: {
+                // set from code, before validation call
+                fn: 'present'
+            },
+            value: {
+                // set from user, but should be set before validation call:
+                fn: 'present'
+            }
+        }*/
+    });
+
+    var PurchaseOrderPaymentTerm = Backbone.MozuModel.extend({
+        // validation should pass! This is set from code and not sent to server.
+        /*validation: {
+            code: {
+                fn: 'present'
+            },
+            description: {
+                fn: 'present'
+            }
+        }*/
+    });
+
+    var PurchaseOrder = PaymentMethod.extend({
+        mozuType: 'purchaseorder',
+        defaults: {
+            isEnabled: false,
+            splitPayment: false,
+            amount: 0,
+            availableBalance: 0,
+            creditLimit: 0
+        },
+
+        relations: {
+            paymentTerm: PurchaseOrderPaymentTerm,
+            customFields: Backbone.Collection.extend({
+                model: PurchaseOrderCustomField
+            }),
+            paymentTermOptions: Backbone.Collection.extend({
+                model: PurchaseOrderPaymentTerm
+            })
+        },
+        
+        initialize: function() {
+            var self = this;
+        },
+
+        // take the custom fields array and add them to the model as individual .
+        deflateCustomFields: function() {
+            //"pOCustomField-"+field.code
+            var customFields = this.get('customFields').models;
+            var siteSettingsCustomFields = HyprLiveContext.locals.siteContext.checkoutSettings.purchaseOrder.customFields;
+            /*if(customFields.length > 0) {
+                customFields.forEach(function(field) {
+                    var ssCustomField = siteSettingsCustomFields.find(function(searchField) {
+                        return field.get('code') === searchField.code;
+                    }, this);
+
+                }, this);
+            }*/
+            siteSettingsCustomFields.forEach(function(field) {
+                if(field.isEnabled) {
+                    var data = customFields.find(function(val) {
+                        return val.get('code') === field.code;
+                    });
+
+                    if(data && data.get('value').length > 0) {
+                        this.set('pOCustomField-'+field.code, data.get('value'));
+                    }
+
+                    if(field.isRequired) {
+                        this.validation['pOCustomField-'+field.code] =
+                            {
+                                fn: 'present',
+                                msg: field.label+ " " + Hypr.getLabel('missing')
+                            };
+                    }
+                }
+            }, this);
+        },
+
+        inflateCustomFields: function() {
+            var customFields = [];
+            var siteSettingsCustomFields = HyprLiveContext.locals.siteContext.checkoutSettings.purchaseOrder.customFields;
+            
+            siteSettingsCustomFields.forEach(function(field) {
+                if(field.isEnabled) {
+                    var value = this.get("pOCustomField-"+field.code);
+                    var customField = {"code":field.code, "label": field.label, "value":value};
+                    // we only want this if it had data!
+                    if(value && value.length > 0) {
+                        customFields.push(customField);
+                    }
+                }
+            }, this);
+
+            if(customFields.length > 0) {
+                this.set('customFields', customFields, {silent: true});
+            }
+        },
+
+        validation: {
+            purchaseOrderNumber: {
+                fn: 'present',
+                msg: Hypr.getLabel('purchaseOrderNumberMissing')
+            },/*
+            customFields: {
+                fn: function(value, attr) {
+                    var siteSettingsCustomFields = HyprLiveContext.locals.siteContext.checkoutSettings.purchaseOrder.customFields;
+                    var purchaseOrderCustomFields = this.get('purchaseOrder').get('customFields').models;
+                    var result = null;
+                    siteSettingsCustomFields.forEach(function(field) {
+                        if(field.isEnabled && field.isRequired) {
+                            var fieldInput = $('#mz-payment-pOCustomField-' + field.code);
+
+                            var foundField = purchaseOrderCustomFields.find(function(poField){
+                                return poField.code === field.code;
+                            });
+
+                            if(foundField && foundField.get('code') && foundField.get('value').length > 0) {
+                                fieldInput.removeClass('is-invalid');
+                                $('#mz-payment-pOCustomField-' + field.code + '-validation').empty();
+                            } else {
+                                var errorMessage = field.label + " " + Hypr.getLabel('missing');
+                                fieldInput.addClass('is-invalid');
+                                $('#mz-payment-pOCustomField-' + field.code + '-validation').text(errorMessage);
+                                result = Hypr.getLabel('purchaseOrderCustomFieldMissing');
+                            }
+                        }
+                    });
+                    return result;
+                }
+            },*/
+            paymentTerm: {
+                fn: function(value, attr) {
+
+                    var selectedPaymentTerm = null;
+                    var purchaseOrder = null;
+                    if(attr.indexOf('billingInfo') > -1) {
+                        purchaseOrder = this.get('billingInfo').get('purchaseOrder');
+                        selectedPaymentTerm = this.get('billingInfo').get('purchaseOrder').get('paymentTerm');
+                    } else {
+                        purchaseOrder = this.get('purchaseOrder');
+                        selectedPaymentTerm = this.get('purchaseOrder').get('paymentTerm');
+                    }
+
+                    if(!purchaseOrder.selected) {
+                        return;
+                    }
+                    
+                    if(!selectedPaymentTerm.get('description')) {
+                        return Hypr.getLabel('purchaseOrderPaymentTermMissing');
+                    }
+
+                    return;
+                }
+            }
+        },
+        // the toJSON method should omit the CVV so it is not sent to the wrong API
+        toJSON: function (options) {
+            var j = PaymentMethod.prototype.toJSON.apply(this);
+            
+            return j;
+        },
+
+        dataTypes: {
+            isEnabled: Backbone.MozuModel.DataTypes.Boolean,
+            splitPayment: Backbone.MozuModel.DataTypes.Boolean,
+            amount: Backbone.MozuModel.DataTypes.Float,
+            availableBalance: Backbone.MozuModel.DataTypes.Float,
+            creditLimit: Backbone.MozuModel.DataTypes.Float
+        }
+
+    });
+
     return {
+        PurchaseOrder: PurchaseOrder,
         CreditCard: CreditCard,
         CreditCardWithCVV: CreditCardWithCVV,
         Check: Check,
         DigitalCredit: DigitalCredit
     };
 });
-define('modules/models-customer',['modules/backbone-mozu', 'underscore', 'modules/models-address', 'modules/models-orders', 'modules/models-paymentmethods', 'modules/models-product', 'hyprlive'], function (Backbone, _, AddressModels, OrderModels, PaymentMethods, ProductModels, Hypr) {
+define('modules/models-customer',['modules/backbone-mozu', 'underscore', 'modules/models-address', 'modules/models-orders', 'modules/models-paymentmethods', 'modules/models-product', 'modules/models-returns', 'hyprlive'], function (Backbone, _, AddressModels, OrderModels, PaymentMethods, ProductModels, ReturnModels, Hypr) {
 
 
     var pageContext = require.mozuData('pagecontext'),
@@ -7414,7 +8288,7 @@ define('modules/models-customer',['modules/backbone-mozu', 'underscore', 'module
             editingContact: CustomerContact,
             wishlist: Wishlist,
             orderHistory: OrderModels.OrderCollection,
-            returnHistory: OrderModels.RMACollection
+            returnHistory: ReturnModels.RMACollection
         }, Customer.prototype.relations),
         validation: {
             password: {
@@ -9961,7 +10835,9 @@ return jQuery;
 //@ sourceURL=/vendor/typeahead.js/typeahead.bundle.js
 
 ;
-define('modules/search-autocomplete',['shim!vendor/typeahead.js/typeahead.bundle[modules/jquery-mozu=jQuery]>jQuery', 'hyprlive', 'modules/api'], function($, Hypr, api) {
+define('modules/search-autocomplete',['shim!vendor/typeahead.js/typeahead.bundle[modules/jquery-mozu=jQuery]>jQuery', 'hyprlive', 'modules/api',
+      'hyprlivecontext'], function($, Hypr, api,
+        HyprLiveContext) {
 
     // bundled typeahead saves a lot of space but exports bloodhound to the root object, let's lose it
     var Bloodhound = window.Bloodhound.noConflict();
@@ -10070,7 +10946,7 @@ define('modules/search-autocomplete',['shim!vendor/typeahead.js/typeahead.bundle
         }, dataSetConfigs).data('ttTypeahead');
         // user hits enter key while menu item is selected;
         $field.on('typeahead:selected', function (e, data, set) {
-            if (data.suggestion.productCode) window.location = "/p/" + data.suggestion.productCode;
+            if (data.suggestion.productCode) window.location = (HyprLiveContext.locals.siteContext.siteSubdirectory||'') + "/p/" + data.suggestion.productCode;
         });
     });
 

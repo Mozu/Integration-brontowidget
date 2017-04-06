@@ -24,6 +24,7 @@ modules/login-links.js
 modules/models-address.js
 modules/models-price.js
 modules/models-product.js
+modules/models-returns.js
 modules/models-orders.js
 modules/models-paymentmethods.js
 modules/models-customer.js
@@ -75,8 +76,6 @@ pages/myaccount.js
 pages/product.js
 ----------------
 modules/views-productimages.js
-shim!vendor/jquery.tools.dateinput[jquery=jQuery]>jQuery
-modules/jquery-dateinput-localized.js
 pages/product.js
 
 pages/search.js

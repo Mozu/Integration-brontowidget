@@ -1,5 +1,8 @@
 
-define('modules/models-cart',['underscore', 'modules/backbone-mozu', 'hyprlive', "modules/api"], function (_, Backbone, Hypr, api) {
+define('modules/models-cart',['underscore', 'modules/backbone-mozu', 'hyprlive', "modules/api",
+    "hyprlivecontext"
+    ], function (_, Backbone, Hypr, api,
+        HyprLiveContext) {
 
     var CartItemProduct = Backbone.MozuModel.extend({
         helpers: ['mainImage'],
@@ -10,7 +13,7 @@ define('modules/models-cart',['underscore', 'modules/backbone-mozu', 'hyprlive',
             return img || { ImageUrl: imgurl, imageUrl: imgurl }; // to support case insensitivity
         },
         initialize: function() {
-            var url = "/product/" + this.get("productCode");
+            var url = (HyprLiveContext.locals.siteContext.siteSubdirectory || '')  + "/product/" + this.get("productCode");
             this.set({ Url: url, url: url });
         }
     }),
@@ -35,7 +38,16 @@ define('modules/models-cart',['underscore', 'modules/backbone-mozu', 'hyprlive',
             return price.baseAmount != price.discountedAmount;
         },
         saveQuantity: function() {
-            if (this.hasChanged("quantity")) this.apiUpdateQuantity(this.get("quantity"));
+            var self = this;
+            var oldQuantity = this.previous("quantity");
+            if (this.hasChanged("quantity")) {
+                this.apiUpdateQuantity(this.get("quantity"))
+                    .then(null, function() {
+                        // Quantity update failed, e.g. due to limited quantity or min. quantity not met. Roll back.
+                        self.set("quantity", oldQuantity);
+                        self.trigger("quantityupdatefailed", self, oldQuantity);
+                    });
+            }
         }
     }),
 
@@ -186,6 +198,7 @@ define('pages/cart',['modules/backbone-mozu', 'underscore', 'modules/jquery-mozu
                 }
             });
 
+            this.listenTo(this.model.get('items'), 'quantityupdatefailed', this.onQuantityUpdateFailed, this);
 
             var visaCheckoutSettings = HyprLiveContext.locals.siteContext.checkoutSettings.visaCheckout;
             var pageContext = require.mozuData('pagecontext');
@@ -210,6 +223,15 @@ define('pages/cart',['modules/backbone-mozu', 'underscore', 'modules/jquery-mozu
                 item.saveQuantity();
             }
         },400),
+        onQuantityUpdateFailed: function(model, oldQuantity) {
+            var field = this.$('[data-mz-cart-item=' + model.get('id') + ']');
+            if (field) {
+                field.val(oldQuantity);
+            }
+            else {
+                this.render();
+            }
+        },
         removeItem: function(e) {
             if(require.mozuData('pagecontext').isEditMode) {
                 // 65954
@@ -330,7 +352,7 @@ define('pages/cart',['modules/backbone-mozu', 'underscore', 'modules/jquery-mozu
 
         cartModel.on('ordercreated', function (order) {
             cartModel.isLoading(true);
-            window.location = "/checkout/" + order.prop('id');
+            window.location = (HyprLiveContext.locals.siteContext.siteSubdirectory||'') + '/checkout/' + order.prop('id');
         });
 
         cartModel.on('sync', function() {

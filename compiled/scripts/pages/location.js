@@ -22,8 +22,10 @@ define('modules/models-location',["modules/jquery-mozu", "modules/backbone-mozu"
         };
     }
 );
-require(['modules/jquery-mozu', 'hyprlive', 'modules/backbone-mozu', 'modules/models-location', 'modules/models-product'],
-    function($, Hypr, Backbone, LocationModels, ProductModels) {
+require(['modules/jquery-mozu', 'hyprlive', 'modules/backbone-mozu', 'modules/models-location', 'modules/models-product',
+    'hyprlivecontext'],
+    function($, Hypr, Backbone, LocationModels, ProductModels,
+        HyprLiveContext) {
 
         var positionErrorLabel = Hypr.getLabel('positionError'),
 
@@ -81,11 +83,10 @@ require(['modules/jquery-mozu', 'hyprlive', 'modules/backbone-mozu', 'modules/mo
                 });
             },
             addToCartForPickup: function (e) {
-                var self = this,
-                    $target = $(e.currentTarget),
+                var $target = $(e.currentTarget),
                     loc = $target.data('mzLocation');
                 $target.parent().addClass('is-loading');
-                this.product.addToCartForPickup(loc);
+                this.product.addToCartForPickup(loc, this.product.get('quantity'));
             },
             setProduct: function (product) {
                 var me = this;
@@ -94,8 +95,17 @@ require(['modules/jquery-mozu', 'hyprlive', 'modules/backbone-mozu', 'modules/mo
                     $(window).on('beforeunload', function() {
                         me.$('.is-loading').removeClass('is-loading');
                     });
-                    window.location.href = "/cart";
+                    window.location.href = (HyprLiveContext.locals.siteContext.siteSubdirectory||'') + "/cart";
                 });
+                this.listenTo(me.product, 'error', function () {
+                    this.$('.is-loading').removeClass('is-loading');
+                    this.render();
+                });
+            },
+            getRenderContext: function () {
+                var c = Backbone.MozuView.prototype.getRenderContext.apply(this, arguments);
+                c.model.messages = (this.product.messages) ? this.product.messages.toJSON() : [];
+                return c;
             }
         });
 

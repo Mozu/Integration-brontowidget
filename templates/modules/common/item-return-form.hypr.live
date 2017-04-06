@@ -1,0 +1,65 @@
+﻿<div class="mz-returnform">
+  <div class="mz-l-formfieldgroup">
+  <div class="mz-l-formfieldgroup-row">
+    <div class="mz-l-formfieldgroup-cell">
+      <div class="mz-returnform-returntype">
+          <label class="mz-returnform-label">{{ labels.returnType }}</label>
+          <div class="mz-returnform-field">
+            <label>
+              <input type="radio" value="Refund" name="rmaReturnType_{{model.productCode}}_{{model.orderLineId}}" data-mz-value="rmaReturnType" checked="checked"/> {{ labels.refund }} </label>
+            <label>
+              <input type="radio" value="Replace" name="rmaReturnType_{{model.productCode}}_{{model.orderLineId}}" data-mz-value="rmaReturnType" /> {{ labels.replace }} </label>
+          </div>
+      </div>
+
+      <div class="mz-returnform-reason">
+          <label class="mz-returnform-label">{{ labels.reasonForReturn }}<span class="is-required"> *</span>:</label>
+          <div class="mz-returnform-field">
+            <select data-mz-value="rmaReason" class="mz-returnform-reason">
+              <option value="">{{ labels.pleaseSelect }}</option>
+              {% for reason in pageContext.reasonCollection.items %}
+              <option value="{{reason}}">{{ labels|prop(reason) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <span class="mz-validationmessage" data-mz-validationmessage-for="rmaReason"></span>
+      </div>
+
+      {% block item-return-quantity %}
+      <div class="mz-returnform-quantity">
+        
+        <label class="mz-returnform-label">{{ labels.quantityToReturn }}<span class="is-required"> *</span>:</label>
+        <div class="mz-returnform-field">
+          <input type="number" data-mz-value="rmaQuantity" min="1" max="{{ model.quantity }}" class="mz-returnform-quantityfield" />
+          <span class="mz-returnform-quantitylabel">{{ labels.of }} {{ model.quantity }}</span>
+          <span class="mz-validationmessage" data-mz-validationmessage-for="rmaQuantity"></span>
+        </div>
+      </div>
+      {% endblock item-return-quantity %}
+      </div>
+
+      <div class="mz-l-formfieldgroup-cell">
+      <div class="mz-returnform-comments">
+        <div class="mz-returnform-optionalcomments">
+            <label class="mz-returnform-label">{{ labels.optionalComments }}</label>
+          <div class="mz-returnform-field">
+            <textarea class="mz-returnform-optionalcommentsfield" data-mz-value="rmaComments"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% block item-return-actions %}
+    <div class="mz-l-formfieldgroup-row mz-returnform-actions">
+      <div class="mz-l-formfieldgroup-cell">
+        <label>{{ labels.actions }}</label>
+      </div>
+      <div class="mz-l-formfieldgroup-cell">
+        <button class="mz-button" data-mz-action="finishReturnItem">{{ labels.submit }}</button>
+        <button class="mz-button" data-mz-action="cancelReturnItem">{{ labels.cancel }}</button>
+      </div>
+    </div>
+    {% endblock item-return-actions %}
+
+  </div>
+</div>
