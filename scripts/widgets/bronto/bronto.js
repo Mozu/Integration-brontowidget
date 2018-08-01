@@ -42,7 +42,7 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
           self._getBrontoScript();
 
           //if checkout set listeners to backbone order object
-          if(self._getPageContext().pageType == "checkout"){
+          if(self._getPageContext().pageType == "checkout" || self._getPageContext().pageType == "checkoutv2"){
             if(window.order && window.order instanceof Backbone.Model){
               window.order.on('change', function(model){
                 var changedAttributes = model.changedAttributes();
@@ -59,7 +59,7 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
         });
       }
       //if checkout page, settimeout for checkout.js to finish
-      if(this._getPageContext().pageType == "checkout")
+      if(this._getPageContext().pageType == "checkout" || this._getPageContext().pageType == "checkoutv2")
         setTimeout(build, 2000);
       else
         build();
@@ -112,7 +112,7 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
 
       var order;
 
-      if(pageType == "checkout"){
+      if(pageType == "checkout" || pageType == "checkoutv2" || pageType == "confirmationv2"){
         order = require.mozuData('checkout');
       } else if(pageType == "confirmation"){
         order = require.mozuData('order');
@@ -148,9 +148,9 @@ function (HyprLiveContext, _, $, Backbone, api,CartModels) {
       var cartPhase = "SHOPPING";
       var pageType = this._getPageContext().pageType;
 
-      if(pageType == "checkout"){
+      if(pageType == "checkout" || pageType == "checkoutv2"){
         cartPhase = this.getCheckoutCartPhase();
-      } else if(pageType == "confirmation"){
+      } else if(pageType == "confirmation" || pageType == "confirmationv2"){
         cartPhase = this.phases.ORDER_COMPLETE;
       }
       console.log('get cart phase ' + cartPhase);
